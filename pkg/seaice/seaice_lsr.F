@@ -1499,19 +1499,11 @@ C     !LOCAL VARIABLES:
 C     === Local variables ===
 C     i,j  :: Loop counters
       INTEGER I,J
-      INTEGER kSrf
       _RL hFacM
       _RL sig11(1-OLx:sNx+OLx,1-OLy:sNy+OLy)
       _RL sig12(1-OLx:sNx+OLx,1-OLy:sNy+OLy)
 CEOP
 
-      kSrf = 1
-      DO J=1-OLy,sNy+OLy
-       DO I=1-OLx,sNx+OLx
-        sig11(I,J) = 0. _d 0
-        sig12(I,J) = 0. _d 0
-       ENDDO
-      ENDDO
 C     contribution of sigma11 to rhs
       DO J=jMin,jMax
        DO I=iMin-1,iMax
@@ -1630,19 +1622,10 @@ C     !LOCAL VARIABLES:
 C     === Local variables ===
 C     i,j  :: Loop counters
       INTEGER I,J
-      INTEGER kSrf
       _RL hFacM
       _RL sig22(1-OLx:sNx+OLx,1-OLy:sNy+OLy)
       _RL sig12(1-OLx:sNx+OLx,1-OLy:sNy+OLy)
 CEOP
-
-      kSrf = 1
-      DO J = 1-OLy,sNy+OLy
-       DO I = 1-OLx,sNx+OLx
-        sig22(I,J) = 0. _d 0
-        sig12(I,J) = 0. _d 0
-       ENDDO
-      ENDDO
 
 C     contribution of sigma22 to rhs
       DO J=jMin-1,jMax
@@ -1780,13 +1763,6 @@ C     i,j  :: Loop counters
       _RL URT(1-OLx:sNx+OLx,1-OLy:sNy+OLy)
       _RL CUU(1-OLx:sNx+OLx,1-OLy:sNy+OLy)
 
-C     Need to initialize local arrays
-      DO J = 1-OLy,sNy+OLy
-       DO I = 1-OLx,sNx+OLx
-        URT(I,J) = 0. _d 0
-        CUU(I,J) = 0. _d 0
-       ENDDO
-      ENDDO
 #ifdef SEAICE_LSR_ZEBRA
       DO K=0,1
       jMinLoc = jMin+K
@@ -1925,13 +1901,6 @@ C     i,j  :: Loop counters
       _RL VRT(1-OLx:sNx+OLx,1-OLy:sNy+OLy)
       _RL CVV(1-OLx:sNx+OLx,1-OLy:sNy+OLy)
 
-C     Need to initialize local arrays
-      DO J = 1-OLy,sNy+OLy
-       DO I = 1-OLx,sNx+OLx
-        VRT(I,J) = 0. _d 0
-        CVV(I,J) = 0. _d 0
-       ENDDO
-      ENDDO
 #ifdef SEAICE_LSR_ZEBRA
       DO K=0,1
       iMinLoc = iMin+K
