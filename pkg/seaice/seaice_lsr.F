@@ -22,6 +22,7 @@ CBOP
 C     !ROUTINE: SEAICE_LSR
 C     !INTERFACE:
       SUBROUTINE SEAICE_LSR( myTime, myIter, myThid )
+      use openacc
 
 C     !DESCRIPTION: \bv
 C     *==========================================================*
@@ -150,6 +151,22 @@ C     tendency due to advection of momentum
       _RL residUmix, residVmix
 #endif /* SEAICE_ALLOW_FREEDRIFT */
       _RL areaMinLoc
+
+cTODO preprocessor script does not work with compiler specific macros
+!#ifdef _OPENACC
+c     This is a temporary Bugfix, see for further information
+c     https://www.pgroup.com/userforum/viewtopic.php?p=24688
+      interface
+        subroutine acc_memcpy_device( dest, src, bytes )
+     &     bind(c,name='acc_memcpy_device_')
+           import c_ptr, c_devptr
+           type(c_devptr) :: dest
+           type(c_devptr) :: src
+!dir$ ignore_tkr (k) bytes
+           integer(kind=int_ptr_kind()), value :: bytes
+        end subroutine
+      end interface
+!#endif
 
 C---+----1----+----2----+----3----+----4----+----5----+----6----+----7-|--+----|
 
@@ -661,6 +678,10 @@ CML#endif /* ALLOW_AUTODIFF_TAMC */
       ICOUNT1 = SOLV_MAX_TMP
       ICOUNT2 = SOLV_MAX_TMP
 
+!$acc data copy(uIce, vIce)
+!$acc& create(uTmp, vTmp)
+!$acc& copyin(AU, BU, CU, uRt1, uRt2, rhsU, seaiceMaskU)
+!$acc& copyin(AV, BV, CV, vRt1, vRt2, rhsV, seaiceMaskV)
       DO m = 1, SOLV_MAX_TMP
 
 #ifdef ALLOW_AUTODIFF_TAMC
@@ -754,6 +775,15 @@ C     end bi,bj-loops
         ELSE
 #endif /* SEAICE_GLOBAL_3DIAG_SOLVER */
 
+cTODO preprocessor script does not work with compiler specific macros
+!#ifdef _OPENACC
+c     save time by copying all tiles at once
+        CALL acc_memcpy_device(acc_deviceptr(uTmp), acc_deviceptr(uIce),
+     & sizeof(uIce))
+        CALL acc_memcpy_device(acc_deviceptr(vTmp), acc_deviceptr(vIce),
+     & sizeof(vIce))
+!#endif
+
         DO bj=myByLo(myThid),myByHi(myThid)
          DO bi=myBxLo(myThid),myBxHi(myThid)
 
@@ -773,12 +803,15 @@ CADJ STORE vice(:,:,bi,bj) = comlev1_bibj_lsr,kind=isbyte,key=itmpkey3
 #endif /* ALLOW_AUTODIFF_TAMC */
 C-jmc: get less TAF warnings when always (no if doIterate) saving uIce,vIce:
 C     save u/vIce prior to iteration
-          DO j=1-OLy,sNy+OLy
-           DO i=1-OLx,sNx+OLx
-            uTmp(I,J,bi,bj)=uIce(I,J,bi,bj)
-            vTmp(I,J,bi,bj)=vIce(I,J,bi,bj)
-           ENDDO
-          ENDDO
+cTODO preprocessor script does not work with compiler specific macros
+!#ifndef _OPENACC
+!          DO j=1-OLy,sNy+OLy
+!           DO i=1-OLx,sNx+OLx
+!            uTmp(I,J,bi,bj)=uIce(I,J,bi,bj)
+!            vTmp(I,J,bi,bj)=vIce(I,J,bi,bj)
+!           ENDDO
+!          ENDDO
+!#endif
 
           IF ( doIterate4u ) THEN
 C Solve for uIce :
@@ -804,7 +837,10 @@ C     end bi,bj-loops
         ENDIF
 #endif /* SEAICE_GLOBAL_3DIAG_SOLVER */
 
+cTODO move to GPU if possible
+!$acc update self(uIce, vIce)
         IF ( doIterate4u.AND.MOD(m,SOLV_NCHECK).EQ.0) THEN
+!$acc update self(uTmp)
          S1=ZERO
          DO bj=myByLo(myThid),myByHi(myThid)
           DO bi=myBxLo(myThid),myBxHi(myThid)
@@ -830,6 +866,7 @@ C SAFEGUARD AGAINST BAD FORCING ETC
         ENDIF
 
         IF ( doIterate4v.AND.MOD(m,SOLV_NCHECK).EQ.0) THEN
+!$acc update self(vTmp)
          S2=ZERO
          DO bj=myByLo(myThid),myByHi(myThid)
           DO bi=myBxLo(myThid),myBxHi(myThid)
@@ -852,11 +889,14 @@ C SAFEGUARD AGAINST BAD FORCING ETC
          ENDIF
         ENDIF
 
+c     update self(uIce, vIce)    already done
         CALL EXCH_UV_XY_RL( uIce, vIce,.TRUE.,myThid)
+!$acc update device(uIce, vIce)
 
 C--    end doIterate4u or doIterate4v
        ENDIF
       ENDDO
+!$acc end data
 C ITERATION END -----------------------------------------------------
 
 C---+----1----+----2----+----3----+----4----+----5----+----6----+----7-|--+----|
@@ -1766,6 +1806,8 @@ C     i,j  :: Loop counters
 #ifdef SEAICE_LSR_ZEBRA
       DO K=0,1
       jMinLoc = jMin+K
+!$acc kernels loop gang vector present(AU, BU, CU, uRt1, uRt2,
+!$acc& rhsU, uTmp, seaiceMaskU, uIce) create(URT, CUU)
 #else
       jMinLoc = jMin
 #endif /* SEAICE_LSR_ZEBRA */
@@ -1831,6 +1873,7 @@ C     go back to original order
        ENDDO
       ENDDO
 #ifdef SEAICE_LSR_ZEBRA
+!$acc end kernels
       ENDDO
 #endif /* SEAICE_LSR_ZEBRA */
 
@@ -1904,6 +1947,8 @@ C     i,j  :: Loop counters
 #ifdef SEAICE_LSR_ZEBRA
       DO K=0,1
       iMinLoc = iMin+K
+!$acc kernels loop gang vector present(AV, BV, CV, vRt1, vRt2,
+!$acc& rhsV, vTmp, seaiceMaskV, vIce) create(VRT, CVV)
 #else
       iMinLoc = iMin
 #endif /*  SEAICE_LSR_ZEBRA */
@@ -1977,6 +2022,7 @@ C     relaxation with WFAV
        ENDDO
       ENDDO
 #ifdef SEAICE_LSR_ZEBRA
+!$acc end kernels
       ENDDO
 #endif /* SEAICE_LSR_ZEBRA */
 
