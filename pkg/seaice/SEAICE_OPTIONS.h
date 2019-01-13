@@ -127,6 +127,13 @@ C     This modification improves the convergence of the vector code
 C     dramatically, so that is may actually be useful in general, but
 C     that needs to be tested. Can be used without vectorization options.
 # undef SEAICE_LSR_ZEBRA
+# ifdef _OPENACC
+C     The OpenACC implementation needs SEAICE_LSR_ZEBRA in order to
+c     work.
+# define SEAICE_LSR_ZEBRA
+C     The benefit of the vectorization method needs to be tested.
+c# define SEAICE_VECTORIZE_LSR
+#endif /* _OPENACC */
 C     Use parameterisation of grounding ice for a better representation
 C     of fastice in shallow seas
 # undef SEAICE_ALLOW_BOTTOMDRAG

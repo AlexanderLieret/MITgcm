@@ -1,0 +1,75 @@
+#!/bin/bash
+#
+# this is not tested with MPI (may work) and OpenMP (not expected to work)
+
+if test "x$MPI" = xtrue ; then
+  CC=mpicc
+  FC=mpif77
+  F90C=mpif90
+else
+  CC=pgcc
+  FC=pgfortran # wrapper for pgf90 ord pgf95
+  F90C=pgf90
+fi
+
+DEFINES="-DWORDLENGTH=4"
+if test "x$ALWAYS_USE_F90" = x1 ; then
+    FC=$F90C
+else
+    DEFINES="$DEFINES -DNML_EXTENDED_F77"
+fi
+CPP='cpp -traditional -P'
+F90FIXEDFORMAT='-Mfixed'
+EXTENDED_SRC_FLAG='-Mextend'
+GET_FC_VERSION="-V"
+OMPFLAG='-mp'
+
+NOOPTFLAGS='-O0'
+NOOPTFILES=''
+
+FFLAGS="$FFLAGS -byteswapio -Ktrap=fp"
+#- might want to use '-r8' for fizhi pkg:
+#FFLAGS="$FFLAGS -r8"
+
+FOPTIM='-pc=64 -O2 -acc'
+DEFINES="$DEFINES -D_OPENACC" #workaround, compiler specific macro
+
+F90FLAGS=$FFLAGS
+F90OPTIM=$FOPTIM
+
+INCLUDEDIRS=''
+INCLUDES=''
+LIBS=''
+
+# TODO test additional libraries
+if [ "x$NETCDF_ROOT" != x ] ; then
+    INCLUDEDIR="${NETCDF_ROOT}/include"
+    INCLUDES="-I${NETCDF_ROOT}/include"
+    LIBDIR="${NETCDF_ROOT}/lib"
+    LIBS="-L${NETCDF_ROOT}/lib"
+elif [ "x$NETCDF_HOME" != x ]; then
+    INCLUDEDIR="${NETCDF_HOME}/include"
+    INCLUDES="-I${NETCDF_HOME}/include"
+    LIBDIR="${NETCDF_HOME}/lib"
+    LIBS="-L${NETCDF_HOME}/lib"
+elif [ "x$NETCDF_INC" != x -a "x$NETCDF_LIB" != x ]; then
+    NETCDF_INC=`echo $NETCDF_INC | sed 's/-I//g'`
+    NETCDF_LIB=`echo $NETCDF_LIB | sed 's/-L//g'`
+    INCLUDEDIR="${NETCDF_INC}"
+    INCLUDES="-I${NETCDF_INC}"
+    LIBDIR="${NETCDF_LIB}"
+    LIBS="-L${NETCDF_LIB}"
+elif [ "x$NETCDF_INCDIR" != x -a "x$NETCDF_LIBDIR" != x ]; then
+    INCLUDEDIR="${NETCDF_INCDIR}"
+    INCLUDES="-I${NETCDF_INCDIR}"
+    LIBDIR="${NETCDF_LIBDIR}"
+    LIBS="-L${NETCDF_LIBDIR}"
+fi
+
+if [ -n "$MPI_INC_DIR" -a "x$MPI" = xtrue ] ; then
+    INCLUDES="$INCLUDES -I$MPI_INC_DIR"
+    INCLUDEDIRS="$INCLUDEDIRS $MPI_INC_DIR"
+    #- used for parallel (MPI) DIVA
+    MPIINCLUDEDIR="$MPI_INC_DIR"
+   #MPI_HEADER_FILES='mpif.h mpiof.h'
+fi

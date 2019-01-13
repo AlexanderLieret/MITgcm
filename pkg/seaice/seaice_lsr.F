@@ -152,8 +152,7 @@ C     tendency due to advection of momentum
 #endif /* SEAICE_ALLOW_FREEDRIFT */
       _RL areaMinLoc
 
-cTODO preprocessor script does not work with compiler specific macros
-!#ifdef _OPENACC
+#ifdef _OPENACC
 c     This is a temporary Bugfix, see for further information
 c     https://www.pgroup.com/userforum/viewtopic.php?p=24688
       interface
@@ -166,7 +165,7 @@ c     https://www.pgroup.com/userforum/viewtopic.php?p=24688
            integer(kind=int_ptr_kind()), value :: bytes
         end subroutine
       end interface
-!#endif
+#endif
 
 C---+----1----+----2----+----3----+----4----+----5----+----6----+----7-|--+----|
 
@@ -775,14 +774,13 @@ C     end bi,bj-loops
         ELSE
 #endif /* SEAICE_GLOBAL_3DIAG_SOLVER */
 
-cTODO preprocessor script does not work with compiler specific macros
-!#ifdef _OPENACC
+#ifdef _OPENACC
 c     save time by copying all tiles at once
         CALL acc_memcpy_device(acc_deviceptr(uTmp), acc_deviceptr(uIce),
      & sizeof(uIce))
         CALL acc_memcpy_device(acc_deviceptr(vTmp), acc_deviceptr(vIce),
      & sizeof(vIce))
-!#endif
+#endif
 
         DO bj=myByLo(myThid),myByHi(myThid)
          DO bi=myBxLo(myThid),myBxHi(myThid)
@@ -803,15 +801,14 @@ CADJ STORE vice(:,:,bi,bj) = comlev1_bibj_lsr,kind=isbyte,key=itmpkey3
 #endif /* ALLOW_AUTODIFF_TAMC */
 C-jmc: get less TAF warnings when always (no if doIterate) saving uIce,vIce:
 C     save u/vIce prior to iteration
-cTODO preprocessor script does not work with compiler specific macros
-!#ifndef _OPENACC
-!          DO j=1-OLy,sNy+OLy
-!           DO i=1-OLx,sNx+OLx
-!            uTmp(I,J,bi,bj)=uIce(I,J,bi,bj)
-!            vTmp(I,J,bi,bj)=vIce(I,J,bi,bj)
-!           ENDDO
-!          ENDDO
-!#endif
+#ifndef _OPENACC
+          DO j=1-OLy,sNy+OLy
+           DO i=1-OLx,sNx+OLx
+            uTmp(I,J,bi,bj)=uIce(I,J,bi,bj)
+            vTmp(I,J,bi,bj)=vIce(I,J,bi,bj)
+           ENDDO
+          ENDDO
+#endif
 
           IF ( doIterate4u ) THEN
 C Solve for uIce :
