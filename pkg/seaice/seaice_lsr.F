@@ -165,7 +165,7 @@ c     https://www.pgroup.com/userforum/viewtopic.php?p=24688
            integer(kind=int_ptr_kind()), value :: bytes
         end subroutine
       end interface
-#endif
+#endif 
 
 C---+----1----+----2----+----3----+----4----+----5----+----6----+----7-|--+----|
 
@@ -781,7 +781,7 @@ c     save time by copying all tiles at once
         CALL acc_memcpy_device(acc_deviceptr(vTmp), acc_deviceptr(vIce),
      & sizeof(vIce))
 #endif
-
+  
         DO bj=myByLo(myThid),myByHi(myThid)
          DO bi=myBxLo(myThid),myBxHi(myThid)
 
@@ -834,12 +834,11 @@ C     end bi,bj-loops
         ENDIF
 #endif /* SEAICE_GLOBAL_3DIAG_SOLVER */
 
-cTODO move to GPU if possible
-!$acc update self(uIce, vIce)
         IF ( doIterate4u.AND.MOD(m,SOLV_NCHECK).EQ.0) THEN
-!$acc update self(uTmp)
          S1=ZERO
+!$acc kernels loop seq reduction(max:s1) copy(S1)
          DO bj=myByLo(myThid),myByHi(myThid)
+!$acc loop seq
           DO bi=myBxLo(myThid),myBxHi(myThid)
            DO J=1,sNy
             DO I=1,sNx
@@ -850,6 +849,7 @@ cTODO move to GPU if possible
            ENDDO
           ENDDO
          ENDDO
+!$acc end kernels
          _GLOBAL_MAX_RL( S1, myThid )
 c        WRITE(standardMessageUnit,'(A,2I6,1P4E16.9)')
 c    &   ' U iters,error,WF = ',ipass,M,S1,S1A,WFAU
@@ -863,9 +863,10 @@ C SAFEGUARD AGAINST BAD FORCING ETC
         ENDIF
 
         IF ( doIterate4v.AND.MOD(m,SOLV_NCHECK).EQ.0) THEN
-!$acc update self(vTmp)
          S2=ZERO
+!$acc kernels loop seq reduction(max:s2) copy(S2)
          DO bj=myByLo(myThid),myByHi(myThid)
+!$acc loop seq
           DO bi=myBxLo(myThid),myBxHi(myThid)
            DO J=1,sNy
             DO I=1,sNx
@@ -876,6 +877,7 @@ C SAFEGUARD AGAINST BAD FORCING ETC
            ENDDO
           ENDDO
          ENDDO
+!$acc end kernels
          _GLOBAL_MAX_RL( S2, myThid )
 C SAFEGUARD AGAINST BAD FORCING ETC
          IF(m.GT.1.AND.S2.GT.S2A) WFAV=WFAV2
@@ -886,7 +888,7 @@ C SAFEGUARD AGAINST BAD FORCING ETC
          ENDIF
         ENDIF
 
-c     update self(uIce, vIce)    already done
+!$acc update self(uIce, vIce)
         CALL EXCH_UV_XY_RL( uIce, vIce,.TRUE.,myThid)
 !$acc update device(uIce, vIce)
 
