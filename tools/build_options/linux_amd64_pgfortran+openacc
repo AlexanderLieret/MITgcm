@@ -27,7 +27,8 @@ OMPFLAG='-mp'
 NOOPTFLAGS='-O0'
 NOOPTFILES=''
 
-FFLAGS="$FFLAGS -byteswapio -Ktrap=fp"
+CFLAGS="$CFLAGS -mcmodel medium -m64"
+FFLAGS="$FFLAGS -byteswapio -Ktrap=fp -mcmodel medium -m64 -g"
 #- might want to use '-r8' for fizhi pkg:
 #FFLAGS="$FFLAGS -r8"
 

@@ -22,7 +22,9 @@ CBOP
 C     !ROUTINE: SEAICE_LSR
 C     !INTERFACE:
       SUBROUTINE SEAICE_LSR( myTime, myIter, myThid )
+#ifdef _OPENACC
       use openacc
+#endif
 
 C     !DESCRIPTION: \bv
 C     *==========================================================*
