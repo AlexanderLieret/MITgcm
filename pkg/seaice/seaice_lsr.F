@@ -679,7 +679,7 @@ CML#endif /* ALLOW_AUTODIFF_TAMC */
       ICOUNT1 = SOLV_MAX_TMP
       ICOUNT2 = SOLV_MAX_TMP
 
-!$acc data copy(uIce, vIce)
+!$acc data create(uIce, vIce)
 !$acc& create(uTmp, vTmp)
 !$acc& copyin(AU, BU, CU, uRt1, uRt2, rhsU, seaiceMaskU)
 !$acc& copyin(AV, BV, CV, vRt1, vRt2, rhsV, seaiceMaskV)
@@ -698,6 +698,7 @@ CADJ STORE doIterate4u, doIterate4v = comlev1_lsr, key = itmpkey2
 #endif /* ALLOW_AUTODIFF_TAMC */
 
        IF ( doIterate4u .OR. doIterate4v ) THEN
+!$acc update device(uIce, vIce)
 
         IF ( useCubedSphereExchange ) THEN
           doIterate4u = .TRUE.
@@ -838,11 +839,13 @@ C     end bi,bj-loops
 
         IF ( doIterate4u.AND.MOD(m,SOLV_NCHECK).EQ.0) THEN
          S1=ZERO
-!$acc kernels loop seq reduction(max:s1) copy(S1)
+!$acc parallel loop seq reduction(max:s1) copy(S1)
          DO bj=myByLo(myThid),myByHi(myThid)
 !$acc loop seq
           DO bi=myBxLo(myThid),myBxHi(myThid)
+!$acc loop gang
            DO J=1,sNy
+!$acc loop worker vector
             DO I=1,sNx
              UERR=(uIce(I,J,bi,bj)-uTmp(I,J,bi,bj))
      &               * seaiceMaskU(I,J,bi,bj)
@@ -851,7 +854,7 @@ C     end bi,bj-loops
            ENDDO
           ENDDO
          ENDDO
-!$acc end kernels
+!$acc end parallel
          _GLOBAL_MAX_RL( S1, myThid )
 c        WRITE(standardMessageUnit,'(A,2I6,1P4E16.9)')
 c    &   ' U iters,error,WF = ',ipass,M,S1,S1A,WFAU
@@ -866,11 +869,13 @@ C SAFEGUARD AGAINST BAD FORCING ETC
 
         IF ( doIterate4v.AND.MOD(m,SOLV_NCHECK).EQ.0) THEN
          S2=ZERO
-!$acc kernels loop seq reduction(max:s2) copy(S2)
+!$acc parallel loop seq reduction(max:s2) copy(S2)
          DO bj=myByLo(myThid),myByHi(myThid)
 !$acc loop seq
           DO bi=myBxLo(myThid),myBxHi(myThid)
+!$acc loop gang
            DO J=1,sNy
+!$acc loop worker vector
             DO I=1,sNx
              UERR=(vIce(I,J,bi,bj)-vTmp(I,J,bi,bj))
      &               * seaiceMaskV(I,J,bi,bj)
@@ -879,7 +884,7 @@ C SAFEGUARD AGAINST BAD FORCING ETC
            ENDDO
           ENDDO
          ENDDO
-!$acc end kernels
+!$acc end parallel
          _GLOBAL_MAX_RL( S2, myThid )
 C SAFEGUARD AGAINST BAD FORCING ETC
          IF(m.GT.1.AND.S2.GT.S2A) WFAV=WFAV2
@@ -892,7 +897,6 @@ C SAFEGUARD AGAINST BAD FORCING ETC
 
 !$acc update self(uIce, vIce)
         CALL EXCH_UV_XY_RL( uIce, vIce,.TRUE.,myThid)
-!$acc update device(uIce, vIce)
 
 C--    end doIterate4u or doIterate4v
        ENDIF
@@ -1807,7 +1811,7 @@ C     i,j  :: Loop counters
 #ifdef SEAICE_LSR_ZEBRA
       DO K=0,1
       jMinLoc = jMin+K
-!$acc kernels loop gang vector present(AU, BU, CU, uRt1, uRt2,
+!$acc parallel loop gang worker vector present(AU, BU, CU, uRt1, uRt2,
 !$acc& rhsU, uTmp, seaiceMaskU, uIce) create(URT, CUU)
 #else
       jMinLoc = jMin
@@ -1874,7 +1878,7 @@ C     go back to original order
        ENDDO
       ENDDO
 #ifdef SEAICE_LSR_ZEBRA
-!$acc end kernels
+!$acc end parallel
       ENDDO
 #endif /* SEAICE_LSR_ZEBRA */
 
@@ -1948,7 +1952,7 @@ C     i,j  :: Loop counters
 #ifdef SEAICE_LSR_ZEBRA
       DO K=0,1
       iMinLoc = iMin+K
-!$acc kernels loop gang vector present(AV, BV, CV, vRt1, vRt2,
+!$acc parallel loop gang worker vector present(AV, BV, CV, vRt1, vRt2,
 !$acc& rhsV, vTmp, seaiceMaskV, vIce) create(VRT, CVV)
 #else
       iMinLoc = iMin
@@ -2023,7 +2027,7 @@ C     relaxation with WFAV
        ENDDO
       ENDDO
 #ifdef SEAICE_LSR_ZEBRA
-!$acc end kernels
+!$acc end parallel
       ENDDO
 #endif /* SEAICE_LSR_ZEBRA */
 
