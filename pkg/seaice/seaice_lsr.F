@@ -166,6 +166,16 @@ c     https://www.pgroup.com/userforum/viewtopic.php?p=24688
 !dir$ ignore_tkr (k) bytes
            integer(kind=int_ptr_kind()), value :: bytes
         end subroutine
+        subroutine acc_memcpy_device_async( dest, src, bytes, stream )
+     &     bind(c,name='acc_memcpy_device_async_')
+           import c_ptr, c_devptr
+           type(c_devptr) :: dest
+           type(c_devptr) :: src
+!dir$ ignore_tkr (k) bytes
+           integer(kind=int_ptr_kind()), value :: bytes
+!dir$ ignore_tkr (k) stream
+           integer(kind=int_ptr_kind()), value :: stream
+        end subroutine
       end interface
 #endif 
 
@@ -679,10 +689,11 @@ CML#endif /* ALLOW_AUTODIFF_TAMC */
       ICOUNT1 = SOLV_MAX_TMP
       ICOUNT2 = SOLV_MAX_TMP
 
-!$acc data create(uIce, vIce)
-!$acc& create(uTmp, vTmp)
-!$acc& copyin(AU, BU, CU, uRt1, uRt2, rhsU, seaiceMaskU)
-!$acc& copyin(AV, BV, CV, vRt1, vRt2, rhsV, seaiceMaskV)
+!$acc data create(uIce, vIce, uTmp, vTmp, S1, S2) async
+!$acc& create(AU, BU, CU, uRt1, uRt2, rhsU, seaiceMaskU)
+!$acc& create(AV, BV, CV, vRt1, vRt2, rhsV, seaiceMaskV)
+!$acc update device(AU, BU, CU, uRt1, uRt2, rhsU, seaiceMaskU) async(16)
+!$acc update device(AV, BV, CV, vRt1, vRt2, rhsV, seaiceMaskV) async(17)
       DO m = 1, SOLV_MAX_TMP
 
 #ifdef ALLOW_AUTODIFF_TAMC
@@ -698,7 +709,8 @@ CADJ STORE doIterate4u, doIterate4v = comlev1_lsr, key = itmpkey2
 #endif /* ALLOW_AUTODIFF_TAMC */
 
        IF ( doIterate4u .OR. doIterate4v ) THEN
-!$acc update device(uIce, vIce)
+!$acc update device(uIce) async(16)
+!$acc update device(vIce) async(17)
 
         IF ( useCubedSphereExchange ) THEN
           doIterate4u = .TRUE.
@@ -779,10 +791,10 @@ C     end bi,bj-loops
 
 #ifdef _OPENACC
 c     save time by copying all tiles at once
-        CALL acc_memcpy_device(acc_deviceptr(uTmp), acc_deviceptr(uIce),
-     & sizeof(uIce))
-        CALL acc_memcpy_device(acc_deviceptr(vTmp), acc_deviceptr(vIce),
-     & sizeof(vIce))
+        CALL acc_memcpy_device_async(acc_deviceptr(uTmp),
+     &       acc_deviceptr(uIce),sizeof(uIce), 16)
+        CALL acc_memcpy_device_async(acc_deviceptr(vTmp),
+     &       acc_deviceptr(vIce),sizeof(vIce), 17)
 #endif
   
         DO bj=myByLo(myThid),myByHi(myThid)
@@ -839,13 +851,11 @@ C     end bi,bj-loops
 
         IF ( doIterate4u.AND.MOD(m,SOLV_NCHECK).EQ.0) THEN
          S1=ZERO
-!$acc parallel loop seq reduction(max:s1) copy(S1)
+!$acc update device(S1) async(16)
+!$acc parallel loop collapse(4) reduction(max:s1) async(16)
          DO bj=myByLo(myThid),myByHi(myThid)
-!$acc loop seq
           DO bi=myBxLo(myThid),myBxHi(myThid)
-!$acc loop gang
            DO J=1,sNy
-!$acc loop worker vector
             DO I=1,sNx
              UERR=(uIce(I,J,bi,bj)-uTmp(I,J,bi,bj))
      &               * seaiceMaskU(I,J,bi,bj)
@@ -855,6 +865,8 @@ C     end bi,bj-loops
           ENDDO
          ENDDO
 !$acc end parallel
+!$acc update self(S1) async(16)
+!$acc wait(16)
          _GLOBAL_MAX_RL( S1, myThid )
 c        WRITE(standardMessageUnit,'(A,2I6,1P4E16.9)')
 c    &   ' U iters,error,WF = ',ipass,M,S1,S1A,WFAU
@@ -869,13 +881,11 @@ C SAFEGUARD AGAINST BAD FORCING ETC
 
         IF ( doIterate4v.AND.MOD(m,SOLV_NCHECK).EQ.0) THEN
          S2=ZERO
-!$acc parallel loop seq reduction(max:s2) copy(S2)
+!$acc update device(S2) async(17)
+!$acc parallel loop collapse(4) reduction(max:s2) async(17)
          DO bj=myByLo(myThid),myByHi(myThid)
-!$acc loop seq
           DO bi=myBxLo(myThid),myBxHi(myThid)
-!$acc loop gang
            DO J=1,sNy
-!$acc loop worker vector
             DO I=1,sNx
              UERR=(vIce(I,J,bi,bj)-vTmp(I,J,bi,bj))
      &               * seaiceMaskV(I,J,bi,bj)
@@ -885,6 +895,8 @@ C SAFEGUARD AGAINST BAD FORCING ETC
           ENDDO
          ENDDO
 !$acc end parallel
+!$acc update self(S2) async(17)
+!$acc wait(17)
          _GLOBAL_MAX_RL( S2, myThid )
 C SAFEGUARD AGAINST BAD FORCING ETC
          IF(m.GT.1.AND.S2.GT.S2A) WFAV=WFAV2
@@ -895,7 +907,9 @@ C SAFEGUARD AGAINST BAD FORCING ETC
          ENDIF
         ENDIF
 
-!$acc update self(uIce, vIce)
+!$acc update self(uIce) async(16)
+!$acc update self(vIce) async(17)
+!$acc wait
         CALL EXCH_UV_XY_RL( uIce, vIce,.TRUE.,myThid)
 
 C--    end doIterate4u or doIterate4v
@@ -1812,7 +1826,7 @@ C     i,j  :: Loop counters
       DO K=0,1
       jMinLoc = jMin+K
 !$acc parallel loop gang worker vector present(AU, BU, CU, uRt1, uRt2,
-!$acc& rhsU, uTmp, seaiceMaskU, uIce) create(URT, CUU)
+!$acc& rhsU, uTmp, seaiceMaskU, uIce) pcreate(URT, CUU) async(16)
 #else
       jMinLoc = jMin
 #endif /* SEAICE_LSR_ZEBRA */
@@ -1953,7 +1967,7 @@ C     i,j  :: Loop counters
       DO K=0,1
       iMinLoc = iMin+K
 !$acc parallel loop gang worker vector present(AV, BV, CV, vRt1, vRt2,
-!$acc& rhsV, vTmp, seaiceMaskV, vIce) create(VRT, CVV)
+!$acc& rhsV, vTmp, seaiceMaskV, vIce) pcreate(VRT, CVV) async(17)
 #else
       iMinLoc = iMin
 #endif /*  SEAICE_LSR_ZEBRA */
