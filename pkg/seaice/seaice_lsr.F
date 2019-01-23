@@ -190,7 +190,7 @@ c     https://www.pgroup.com/userforum/viewtopic.php?p=24688
 !$acc& create(AV, BV, CV, vRt1, vRt2, rhsV, seaiceMaskV)
 #ifdef _CUDA
 c     Pin memory to avoid extra copy to pinned buffer (very slow)
-c     These calls can cause a lot of overhead
+c     These calls cause some overhead
       if (firstcall) then
       firstcall = .FALSE.
       istat = cudaHostRegister(acc_hostptr(uIce), sizeof(uIce),
@@ -838,10 +838,14 @@ C     end bi,bj-loops
 
 #ifdef _OPENACC
 c     save time by copying all tiles at once
-        CALL acc_memcpy_device_async(acc_deviceptr(uTmp),
-     &       acc_deviceptr(uIce),sizeof(uIce), 16)
-        CALL acc_memcpy_device_async(acc_deviceptr(vTmp),
-     &       acc_deviceptr(vIce),sizeof(vIce), 17)
+        IF ( doIterate4u ) THEN
+         CALL acc_memcpy_device_async(acc_deviceptr(uTmp),
+     &        acc_deviceptr(uIce),sizeof(uIce), 16)
+        ENDIF
+        IF ( doIterate4v ) THEN
+         CALL acc_memcpy_device_async(acc_deviceptr(vTmp),
+     &        acc_deviceptr(vIce),sizeof(vIce), 17)
+        ENDIF
 #endif
   
         DO bj=myByLo(myThid),myByHi(myThid)
@@ -861,9 +865,9 @@ c     save time by copying all tiles at once
 CADJ STORE uice(:,:,bi,bj) = comlev1_bibj_lsr,kind=isbyte,key=itmpkey3
 CADJ STORE vice(:,:,bi,bj) = comlev1_bibj_lsr,kind=isbyte,key=itmpkey3
 #endif /* ALLOW_AUTODIFF_TAMC */
+#ifndef _OPENACC
 C-jmc: get less TAF warnings when always (no if doIterate) saving uIce,vIce:
 C     save u/vIce prior to iteration
-#ifndef _OPENACC
           DO j=1-OLy,sNy+OLy
            DO i=1-OLx,sNx+OLx
             uTmp(I,J,bi,bj)=uIce(I,J,bi,bj)
@@ -912,20 +916,8 @@ C     end bi,bj-loops
           ENDDO
          ENDDO
 !$acc end parallel
-!$acc update self(S1) async(16)
-!$acc wait(16)
-         _GLOBAL_MAX_RL( S1, myThid )
-c        WRITE(standardMessageUnit,'(A,2I6,1P4E16.9)')
-c    &   ' U iters,error,WF = ',ipass,M,S1,S1A,WFAU
-C SAFEGUARD AGAINST BAD FORCING ETC
-         IF(m.GT.1.AND.S1.GT.S1A) WFAU=WFAU2
-         S1A=S1
-         IF(S1.LT.LSR_ERROR) THEN
-          ICOUNT1=m
-          doIterate4u = .FALSE.
-         ENDIF
         ENDIF
-
+        
         IF ( doIterate4v.AND.MOD(m,SOLV_NCHECK).EQ.0) THEN
          S2=ZERO
 !$acc update device(S2) async(17)
@@ -942,8 +934,22 @@ C SAFEGUARD AGAINST BAD FORCING ETC
           ENDDO
          ENDDO
 !$acc end parallel
-!$acc update self(S2) async(17)
-!$acc wait(17)
+        ENDIF
+        
+!$acc update self(uIce, S1) async(16)
+!$acc update self(vIce, S2) async(17)
+!$acc wait
+        IF ( doIterate4u.AND.MOD(m,SOLV_NCHECK).EQ.0) THEN
+         _GLOBAL_MAX_RL( S1, myThid )
+C SAFEGUARD AGAINST BAD FORCING ETC
+         IF(m.GT.1.AND.S1.GT.S1A) WFAU=WFAU2
+         S1A=S1
+         IF(S1.LT.LSR_ERROR) THEN
+          ICOUNT1=m
+          doIterate4u = .FALSE.
+         ENDIF
+        ENDIF
+        IF ( doIterate4v.AND.MOD(m,SOLV_NCHECK).EQ.0) THEN
          _GLOBAL_MAX_RL( S2, myThid )
 C SAFEGUARD AGAINST BAD FORCING ETC
          IF(m.GT.1.AND.S2.GT.S2A) WFAV=WFAV2
@@ -953,10 +959,6 @@ C SAFEGUARD AGAINST BAD FORCING ETC
           doIterate4v = .FALSE.
          ENDIF
         ENDIF
-
-!$acc update self(uIce) async(16)
-!$acc update self(vIce) async(17)
-!$acc wait
         CALL EXCH_UV_XY_RL( uIce, vIce,.TRUE.,myThid)
 
 C--    end doIterate4u or doIterate4v
