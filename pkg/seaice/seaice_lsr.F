@@ -24,6 +24,9 @@ C     !INTERFACE:
       SUBROUTINE SEAICE_LSR( myTime, myIter, myThid )
 #ifdef _OPENACC
       use openacc
+#ifdef _CUDA
+      use cudafor
+#endif
 #endif
 
 C     !DESCRIPTION: \bv
@@ -153,6 +156,10 @@ C     tendency due to advection of momentum
       _RL residUmix, residVmix
 #endif /* SEAICE_ALLOW_FREEDRIFT */
       _RL areaMinLoc
+#ifdef _CUDA
+      Integer istat(:)
+      logical, save :: firstcall = .TRUE.
+#endif
 
 #ifdef _OPENACC
 c     This is a temporary Bugfix, see for further information
@@ -177,6 +184,49 @@ c     https://www.pgroup.com/userforum/viewtopic.php?p=24688
            integer(kind=int_ptr_kind()), value :: stream
         end subroutine
       end interface
+
+!$acc data create(uIce, vIce, uTmp, vTmp, S1, S2) async
+!$acc& create(AU, BU, CU, uRt1, uRt2, rhsU, seaiceMaskU)
+!$acc& create(AV, BV, CV, vRt1, vRt2, rhsV, seaiceMaskV)
+#ifdef _CUDA
+c     Pin memory to avoid extra copy to pinned buffer (very slow)
+c     These calls can cause a lot of overhead
+      if (firstcall) then
+      firstcall = .FALSE.
+      istat = cudaHostRegister(acc_hostptr(uIce), sizeof(uIce),
+     &        cudaHostRegisterPortable)
+      istat = cudaHostRegister(acc_hostptr(AU), sizeof(AU),
+     &        cudaHostRegisterPortable)
+      istat = cudaHostRegister(acc_hostptr(BU), sizeof(BU),
+     &        cudaHostRegisterPortable)
+      istat = cudaHostRegister(acc_hostptr(CU), sizeof(CU),
+     &        cudaHostRegisterPortable)
+      istat = cudaHostRegister(acc_hostptr(uRt1), sizeof(uRt1),
+     &        cudaHostRegisterPortable)
+      istat = cudaHostRegister(acc_hostptr(uRt2), sizeof(uRt2),
+     &        cudaHostRegisterPortable)
+      istat = cudaHostRegister(acc_hostptr(rhsU), sizeof(rhsU),
+     &        cudaHostRegisterPortable)
+      istat = cudaHostRegister(acc_hostptr(seaiceMaskU),
+     &        sizeof(seaiceMaskU), cudaHostRegisterPortable)
+      istat = cudaHostRegister(acc_hostptr(vIce), sizeof(vIce),
+     &        cudaHostRegisterPortable)
+      istat = cudaHostRegister(acc_hostptr(AV), sizeof(AV),
+     &        cudaHostRegisterPortable)
+      istat = cudaHostRegister(acc_hostptr(BV), sizeof(BV),
+     &        cudaHostRegisterPortable)
+      istat = cudaHostRegister(acc_hostptr(CV), sizeof(CV),
+     &        cudaHostRegisterPortable)
+      istat = cudaHostRegister(acc_hostptr(vRt1), sizeof(vRt1),
+     &        cudaHostRegisterPortable)
+      istat = cudaHostRegister(acc_hostptr(vRt2), sizeof(vRt2),
+     &        cudaHostRegisterPortable)
+      istat = cudaHostRegister(acc_hostptr(rhsV), sizeof(rhsV),
+     &        cudaHostRegisterPortable)
+      istat = cudaHostRegister(acc_hostptr(seaiceMaskV),
+     &        sizeof(seaiceMaskV), cudaHostRegisterPortable)
+      endif
+#endif
 #endif 
 
 C---+----1----+----2----+----3----+----4----+----5----+----6----+----7-|--+----|
@@ -689,9 +739,6 @@ CML#endif /* ALLOW_AUTODIFF_TAMC */
       ICOUNT1 = SOLV_MAX_TMP
       ICOUNT2 = SOLV_MAX_TMP
 
-!$acc data create(uIce, vIce, uTmp, vTmp, S1, S2) async
-!$acc& create(AU, BU, CU, uRt1, uRt2, rhsU, seaiceMaskU)
-!$acc& create(AV, BV, CV, vRt1, vRt2, rhsV, seaiceMaskV)
 !$acc update device(AU, BU, CU, uRt1, uRt2, rhsU, seaiceMaskU) async(16)
 !$acc update device(AV, BV, CV, vRt1, vRt2, rhsV, seaiceMaskV) async(17)
       DO m = 1, SOLV_MAX_TMP
@@ -915,7 +962,6 @@ C SAFEGUARD AGAINST BAD FORCING ETC
 C--    end doIterate4u or doIterate4v
        ENDIF
       ENDDO
-!$acc end data
 C ITERATION END -----------------------------------------------------
 
 C---+----1----+----2----+----3----+----4----+----5----+----6----+----7-|--+----|
@@ -1029,6 +1075,7 @@ C--   Compute residual norm and print
       ENDIF
 C     end outer ipass pseudo-time stepping loop
       ENDDO
+!$acc end data
 
       IF ( useHB87StressCoupling ) THEN
 # ifdef ALLOW_AUTODIFF_TAMC

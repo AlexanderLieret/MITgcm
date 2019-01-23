@@ -32,8 +32,8 @@ FFLAGS="$FFLAGS -byteswapio -Ktrap=fp -mcmodel medium -m64 -g"
 #- might want to use '-r8' for fizhi pkg:
 #FFLAGS="$FFLAGS -r8"
 
-FOPTIM='-pc=64 -O2 -acc'
-DEFINES="$DEFINES -D_OPENACC" #workaround, compiler specific macro
+FOPTIM='-pc=64 -O2 -acc -Mcuda'
+DEFINES="$DEFINES -D_OPENACC -D_CUDA" #workaround, compiler specific macros
 
 F90FLAGS=$FFLAGS
 F90OPTIM=$FOPTIM
