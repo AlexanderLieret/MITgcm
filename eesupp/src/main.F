@@ -116,6 +116,8 @@ C     myThid       :: thread Id number
       INTEGER I
       INTEGER dummyComm
 
+!$acc init
+
 #ifdef USE_OMP_THREADING
       INTEGER OMP_GET_THREAD_NUM
       EXTERNAL OMP_GET_THREAD_NUM
@@ -219,6 +221,8 @@ C--   Write closedown status
      &      'PROGRAM MAIN: Execution ended Normally'
        STOP 'NORMAL END'
       ENDIF
+
+!$acc shutdown
 
       END
 

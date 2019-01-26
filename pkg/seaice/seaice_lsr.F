@@ -711,6 +711,7 @@ C     so we hide this part of the code from TAF.
 
 C---+----1----+----2----+----3----+----4----+----5----+----6----+----7-|--+----|
 
+      CALL TIMER_START('SEAICE_LIN_ITERS   [SEAICE_MODEL]',myThid)
 C NOW DO ITERATION
 
 cph--- iteration starts here
@@ -1078,6 +1079,7 @@ C--   Compute residual norm and print
 C     end outer ipass pseudo-time stepping loop
       ENDDO
 !$acc end data
+      CALL TIMER_STOP('SEAICE_LIN_ITERS   [SEAICE_MODEL]',myThid)
 
       IF ( useHB87StressCoupling ) THEN
 # ifdef ALLOW_AUTODIFF_TAMC
