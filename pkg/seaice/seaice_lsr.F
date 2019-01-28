@@ -8,6 +8,82 @@
 # include "AUTODIFF_OPTIONS.h"
 #endif
 
+#ifdef _CUDA
+c     Module for nvtx
+c     totally not borrowed from https://devblogs.nvidia.com/customize-cuda-fortran-profiling-nvtx/
+      module nvtx
+
+      use iso_c_binding
+      implicit none
+
+      integer,private :: col(7) = [ Z'0000ff00', Z'000000ff',
+     & Z'00ffff00',
+     & Z'00ff00ff', Z'0000ffff', Z'00ff0000', Z'00ffffff']
+      character(len=256),private :: tempName
+
+      type, bind(C):: nvtxEventAttributes
+        integer(C_INT16_T):: version=1
+        integer(C_INT16_T):: size=48
+        integer(C_INT):: category=0
+        integer(C_INT):: colorType=1
+        integer(C_INT):: color
+        integer(C_INT):: payloadType=0
+        integer(C_INT):: reserved0
+        integer(C_INT64_T):: payload
+        integer(C_INT):: messageType=1
+        type(C_PTR):: message
+      end type
+
+      interface nvtxRangePush
+c     push range with custom label and standard color
+       subroutine nvtxRangePushA(name)
+     &       bind(C, name='nvtxRangePushA')
+        use iso_c_binding
+        character(kind=C_CHAR,len=*) :: name
+       end subroutine
+
+c     push range with custom label and custom color
+       subroutine nvtxRangePushEx(event)
+     &       bind(C, name='nvtxRangePushEx')
+        use iso_c_binding
+        import:: nvtxEventAttributes
+        type(nvtxEventAttributes):: event
+       end subroutine
+      end interface
+
+      interface nvtxRangePop
+        subroutine nvtxRangePop() bind(C, name='nvtxRangePop')
+        end subroutine
+      end interface
+
+      contains
+
+      subroutine nvtxStartRange(name, id)
+        character(kind=c_char,len=*) :: name
+        integer, optional:: id
+        type(nvtxEventAttributes):: event
+
+        WRITE(*,*) 'StartRange ', name
+        tempName=trim(name)//c_null_char
+
+        if ( .not. present(id)) then
+          call nvtxRangePush(tempName)
+        else
+          event%color=col(mod(id,7)+1)
+          event%message=c_loc(tempName)
+          call nvtxRangePushEx(event)
+        end if
+      end subroutine
+
+      subroutine nvtxEndRange(name)
+        character(kind=c_char,len=*) :: name
+        call nvtxRangePop()
+        WRITE(*,*) 'EndRange ', name
+      end subroutine
+
+      end module nvtx
+#endif
+
 C--  File seaice_lsr.F: seaice LSR dynamical solver S/R:
 C--   Contents
 C--   o SEAICE_LSR
@@ -26,6 +102,7 @@ C     !INTERFACE:
       use openacc
 #ifdef _CUDA
       use cudafor
+      use nvtx
 #endif
 #endif
 
@@ -185,6 +262,10 @@ c     https://www.pgroup.com/userforum/viewtopic.php?p=24688
         end subroutine
       end interface
 
+#ifdef _CUDA
+      CALL nvtxStartRange('SEAICE_LSR', 1)
+#endif
+
 !$acc data create(uIce, vIce, uTmp, vTmp, S1, S2) async
 !$acc& create(AU, BU, CU, uRt1, uRt2, rhsU, seaiceMaskU)
 !$acc& create(AV, BV, CV, vRt1, vRt2, rhsV, seaiceMaskV)
@@ -319,6 +400,10 @@ CADJ &     key = itmpkey
 #endif /* ALLOW_AUTODIFF_TAMC */
 
       IF ( ipass .LE. nonLinIterLoc ) THEN
+      CALL TIMER_START('SEAICE_LIN_PREPARE   [SEAICE_MODEL]',myThid)
+#ifdef _CUDA
+      CALL nvtxStartRange('SEAICE_LIN_PREPARE', 2)
+#endif
 #ifdef ALLOW_AUTODIFF_TAMC
 CADJ STORE uice = comlev1_dynsol, kind=isbyte,
 CADJ &     key = itmpkey
@@ -708,10 +793,17 @@ C     so we hide this part of the code from TAF.
 #endif /* ALLOW_AUTODIFF_TAMC */
       ENDIF
 #endif /* SEAICE_ALLOW_FREEDRIFT */
+#ifdef _CUDA
+      CALL nvtxEndRange('SEAICE_LIN_PREPARE')
+#endif
+      CALL TIMER_STOP('SEAICE_LIN_PREPARE   [SEAICE_MODEL]',myThid)
 
 C---+----1----+----2----+----3----+----4----+----5----+----6----+----7-|--+----|
 
       CALL TIMER_START('SEAICE_LIN_ITERS   [SEAICE_MODEL]',myThid)
+#ifdef _CUDA
+      CALL nvtxStartRange('SEAICE_LIN_ITERS', 3)
+#endif
 C NOW DO ITERATION
 
 cph--- iteration starts here
@@ -966,9 +1058,17 @@ C--    end doIterate4u or doIterate4v
        ENDIF
       ENDDO
 C ITERATION END -----------------------------------------------------
+#ifdef _CUDA
+      CALL nvtxEndRange('SEAICE_LIN_ITERS')
+#endif
+      CALL TIMER_STOP('SEAICE_LIN_ITERS   [SEAICE_MODEL]',myThid)
 
 C---+----1----+----2----+----3----+----4----+----5----+----6----+----7-|--+----|
 
+      CALL TIMER_START('SEAICE_LIN_POST   [SEAICE_MODEL]',myThid)
+#ifdef _CUDA
+      CALL nvtxStartRange('SEAICE_LIN_POST', 4)
+#endif
 #ifndef ALLOW_AUTODIFF_TAMC
 C     Here residU/Vend and u/vTmp are computed but never used for anything
 C     but reporting to STDOUT. Still TAF thinks this requires recomputations
@@ -1075,11 +1175,14 @@ C--   Compute residual norm and print
       ENDIF
 #endif /* SEAICE_ALLOW_CHECK_LSR_CONVERGENCE */
 
+#ifdef _CUDA
+      CALL nvtxEndRange('SEAICE_LIN_POST')
+#endif
+      CALL TIMER_STOP('SEAICE_LIN_POST   [SEAICE_MODEL]',myThid)
       ENDIF
 C     end outer ipass pseudo-time stepping loop
       ENDDO
 !$acc end data
-      CALL TIMER_STOP('SEAICE_LIN_ITERS   [SEAICE_MODEL]',myThid)
 
       IF ( useHB87StressCoupling ) THEN
 # ifdef ALLOW_AUTODIFF_TAMC
@@ -1111,6 +1214,9 @@ C     endif  useHB87StressCoupling
 #endif /* SEAICE_ALLOW_DYNAMICS */
 #endif /* SEAICE_CGRID */
 
+#ifdef _CUDA
+      CALL nvtxEndRange('SEAICE_LSR')
+#endif
       RETURN
       END
 
